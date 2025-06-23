@@ -1,0 +1,228 @@
+{% extends "frontend/base.html" %}
+
+{% block title %}Главная | WB Аналитика{% endblock %}
+
+{% block content %}
+<form id="parserForm" class="row g-3 mb-4 align-items-end">
+  <div class="col-md-6">
+    <label for="searchQuery" class="form-label">Поисковый запрос</label>
+    <input type="text" id="searchQuery" name="query" class="form-control" placeholder="Например: смартфон">
+  </div>
+  <div class="col-md-3">
+    <button type="submit" class="btn btn-outline-success w-100">Получить новые товары</button>
+  </div>
+</form>
+
+<form id="filterForm" class="row g-3 mb-4">
+
+  <!-- Фильтр по цене -->
+  <div class="col-12">
+    <label class="form-label">Цена (₽)</label>
+    <div class="d-flex align-items-center gap-3">
+      <input type="range" class="form-range" min="0" max="100000" step="1000" id="minPrice" name="min_price" value="0">
+      <span id="minPriceValue">0</span> —
+      <input type="range" class="form-range" min="0" max="100000" step="1000" id="maxPrice" name="max_price" value="100000">
+      <span id="maxPriceValue">100000</span>
+    </div>
+  </div>
+
+  <!-- Фильтр по рейтингу -->
+  <div class="col-12">
+    <label class="form-label">Минимальный рейтинг</label>
+    <div class="d-flex align-items-center gap-3">
+      <input type="range" class="form-range" min="0" max="5" step="0.1" id="minRating" name="min_rating" value="0">
+      <span id="minRatingValue">0</span>
+    </div>
+  </div>
+
+  <!-- Фильтр по количеству отзывов -->
+  <div class="col-12">
+    <label class="form-label">Минимум отзывов</label>
+    <div class="d-flex align-items-center gap-3">
+      <input type="range" class="form-range" min="0" max="1000" step="10" id="minReviews" name="min_reviews" value="0">
+      <span id="minReviewsValue">0</span>
+    </div>
+  </div>
+
+  <!-- Кнопка -->
+  <div class="col-12 d-flex justify-content-end">
+    <button type="submit" class="btn btn-primary">Применить</button>
+  </div>
+
+</form>
+
+<!-- Таблица -->
+<div id="productsTable">
+  {% include "frontend/products_table.html" %}
+</div>
+
+<!-- Графики -->
+<div class="mt-5">
+  <h4>Графики</h4>
+  <canvas id="histogram" height="100"></canvas>
+  <canvas id="linechart" height="100" class="mt-4"></canvas>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function bindRange(id, outputId) {
+    const input = document.getElementById(id);
+    const output = document.getElementById(outputId);
+    input.addEventListener('input', () => {
+      output.innerText = input.value;
+    });
+    output.innerText = input.value; // инициализация
+  }
+
+  bindRange('minPrice', 'minPriceValue');
+  bindRange('maxPrice', 'maxPriceValue');
+  bindRange('minRating', 'minRatingValue');
+  bindRange('minReviews', 'minReviewsValue');
+
+  $('#filterForm').on('submit', function(e) {
+    e.preventDefault();
+    $.ajax({
+      url: '/filter/',
+      data: $(this).serialize(),
+      success: function(data) {
+        $('#productsTable').html(data.html);
+        // TODO: update charts if needed
+      }
+    });
+  });
+</script>
+
+<script>
+  let histogramChart = null;
+  let lineChart = null;
+
+  function bindRange(id, outputId) {
+    const input = document.getElementById(id);
+    const output = document.getElementById(outputId);
+    input.addEventListener('input', () => {
+      output.innerText = input.value;
+    });
+    output.innerText = input.value;
+  }
+
+  bindRange('minPrice', 'minPriceValue');
+  bindRange('maxPrice', 'maxPriceValue');
+  bindRange('minRating', 'minRatingValue');
+  bindRange('minReviews', 'minReviewsValue');
+
+  $('#filterForm').on('submit', function(e) {
+    e.preventDefault();
+    $.ajax({
+      url: '/filter/',
+      data: $(this).serialize(),
+      success: function(data) {
+        $('#productsTable').html(data.html);
+        updateCharts(data.chart_data);
+      }
+    });
+  });
+
+  function updateCharts(data) {
+    // Гистограмма цен
+    const priceLabels = data.histogram.map(d => d.range);
+    const priceCounts = data.histogram.map(d => d.count);
+
+    const histConfig = {
+      type: 'bar',
+      data: {
+        labels: priceLabels,
+        datasets: [{
+          label: 'Кол-во товаров',
+          data: priceCounts,
+          backgroundColor: '#0d6efd'
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: 'Распределение товаров по цене' }
+        }
+      }
+    };
+
+    if (histogramChart) {
+      histogramChart.destroy();
+    }
+    histogramChart = new Chart(document.getElementById('histogram'), histConfig);
+
+    // Линейный график скидка-рейтинг
+    const ratings = data.linechart.map(d => d.rating);
+    const discounts = data.linechart.map(d => d.discount);
+
+    const lineConfig = {
+      type: 'line',
+      data: {
+        labels: ratings,
+        datasets: [{
+          label: 'Скидка (₽)',
+          data: discounts,
+          borderColor: '#198754',
+          fill: false,
+          tension: 0.3
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: 'Скидка в зависимости от рейтинга' }
+        },
+        scales: {
+          x: { title: { display: true, text: 'Рейтинг' } },
+          y: { title: { display: true, text: 'Скидка (₽)' } }
+        }
+      }
+    };
+
+    if (lineChart) {
+      lineChart.destroy();
+    }
+    lineChart = new Chart(document.getElementById('linechart'), lineConfig);
+  }
+</script>
+
+<script>
+  $('#parserForm').on('submit', function(e) {
+  e.preventDefault();
+  const query = $('#searchQuery').val().trim();
+  if (!query) return;
+
+  $.ajax({
+    url: '/run-parser/',
+    method: 'POST',
+    data: { query: query },
+    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+    success: function(response) {
+      alert('Товары обновлены');
+      location.reload();
+    },
+    error: function() {
+      alert('Ошибка запуска парсера');
+    }
+  });
+});
+
+// csrf helper
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const trimmed = cookie.trim();
+      if (trimmed.startsWith(name + '=')) {
+        cookieValue = decodeURIComponent(trimmed.slice(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+</script>
+{% endblock %}
