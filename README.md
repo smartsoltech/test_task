@@ -133,10 +133,10 @@ PARSER_SPP=30
 
 Документация по API доступна по адресу 
 
-1. [Swagger](http://127.0.0.1:8000/docs/)
+1. Swagger: [http://127.0.0.1:8000/docs/](http://127.0.0.1:8000/docs/)
 
 
-2. [ReDoc](http://127.0.0.1:8000/redoc/)
+2. ReDoc: [http://127.0.0.1:8000/redoc/](http://127.0.0.1:8000/redoc/)
 
 
 ---
