@@ -1,0 +1,157 @@
+{% extends "frontend/base.html" %}
+
+{% block title %}{{ product.name }} | История{% endblock %}
+
+{% block content %}
+<h2>{{ product.name }}</h2>
+<p><strong>Рейтинг:</strong> {{ product.rating }}</p>
+<p><strong>Текущая цена:</strong> {{ product.discounted_price }}₽ (обычная: {{ product.price }}₽)</p>
+<hr>
+
+<h4>История изменений</h4>
+<table class="table table-sm table-bordered">
+  <thead class="table-light">
+    <tr>
+      <th>Дата</th>
+      <th>Цена</th>
+      <th>Цена со скидкой</th>
+      <th>Скидка</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in history %}
+    <tr>
+      <td>{{ entry.date|date:"Y-m-d H:i" }}</td>
+      <td>{{ entry.price }}₽</td>
+      <td>{{ entry.discounted_price }}₽</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4">История отсутствует</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h5 class="mt-5">График изменения цены</h5>
+<canvas id="priceChart" height="200" class="mb-5"></canvas>
+
+<h5>График изменения скидки</h5>
+<canvas id="discountChart" height="200"></canvas>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Вставка JSON должна быть ДО скрипта -->
+{{ history_serialized|json_script:"historyData" }}
+
+<script>
+  const data = JSON.parse(document.getElementById("historyData").textContent);
+
+  const labels = data.map(entry => entry.date);
+  const prices = data.map(entry => entry.price);
+  const discounts = data.map(entry => entry.discount);
+
+  const priceCtx = document.getElementById('priceChart').getContext('2d');
+  new Chart(priceCtx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Цена (₽)',
+        data: prices,
+        borderColor: '#0d6efd',
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Изменение полной цены по времени'
+        }
+      }
+    }
+  });
+
+  const discountCtx = document.getElementById('discountChart').getContext('2d');
+  new Chart(discountCtx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Скидка (₽)',
+        data: discounts,
+        borderColor: '#dc3545',
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Изменение размера скидки по времени'
+        }
+      }
+    }
+  });
+</script>
+
+<script>
+  fetch(window.location.pathname + '?format=json')
+    .then(response => response.json())
+    .then(data => {
+      const labels = data.map(entry => entry.date);
+      const prices = data.map(entry => entry.price);
+      const discounts = data.map(entry => entry.discount);
+
+      const priceCtx = document.getElementById('priceChart').getContext('2d');
+      new Chart(priceCtx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Цена (₽)',
+            data: prices,
+            borderColor: '#0d6efd',
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Изменение полной цены по времени'
+            }
+          }
+        }
+      });
+
+      const discountCtx = document.getElementById('discountChart').getContext('2d');
+      new Chart(discountCtx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Скидка (₽)',
+            data: discounts,
+            borderColor: '#dc3545',
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Изменение размера скидки по времени'
+            }
+          }
+        }
+      });
+    });
+</script>
+
+{% endblock %}

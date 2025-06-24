@@ -1,0 +1,114 @@
+{% extends "frontend/base.html" %}
+{% block title %}Выбор категории Wildberries{% endblock %}
+
+{% block content %}
+<form id="csrf-form" style="display: none;">
+  {% csrf_token %}
+</form>
+<div class="container mt-5">
+  <h3 class="mb-4">📦 Парсер Wildberries по категориям</h3>
+
+  <div id="category-selectors">
+    <div class="mb-3">
+      <label class="form-label">Выберите категорию верхнего уровня</label>
+      <select class="form-select category-select" data-level="0">
+        <option value="">-- Выберите --</option>
+        {% for cat in top_categories %}
+          <option value="{{ cat.wb_id }}">{{ cat.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <button id="runParserBtn" class="btn btn-primary mt-3" disabled>🚀 Запустить парсинг</button>
+  <div id="status" class="mt-3"></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const container = document.getElementById("category-selectors");
+  const runBtn = document.getElementById("runParserBtn");
+  let selectedWbId = null;
+
+  container.addEventListener("change", function(e) {
+    if (!e.target.classList.contains("category-select")) return;
+
+    const level = parseInt(e.target.dataset.level);
+    selectedWbId = e.target.value;
+
+    // Удалить все селекты ниже текущего
+    document.querySelectorAll(".category-select").forEach(sel => {
+      if (parseInt(sel.dataset.level) > level) sel.parentElement.remove();
+    });
+
+    runBtn.disabled = !selectedWbId;
+
+    if (!selectedWbId) return;
+
+    // Запрос на подкатегории
+    fetch(`/api/subcategories/?parent_id=${selectedWbId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data || data.length === 0) return;
+
+        const div = document.createElement("div");
+        div.className = "mb-3";
+
+        const label = document.createElement("label");
+        label.className = "form-label";
+        label.textContent = `Подкатегория ${level + 1}`;
+
+        const select = document.createElement("select");
+        select.className = "form-select category-select";
+        select.dataset.level = level + 1;
+
+        const def = document.createElement("option");
+        def.value = "";
+        def.textContent = "-- Выберите --";
+        select.appendChild(def);
+
+        data.forEach(cat => {
+          const option = document.createElement("option");
+          option.value = cat.id;
+          option.textContent = cat.name;
+          select.appendChild(option);
+        });
+
+        div.appendChild(label);
+        div.appendChild(select);
+        container.appendChild(div);
+      })
+      .catch(err => {
+        console.error("Ошибка загрузки подкатегорий:", err);
+      });
+  });
+
+  runBtn.addEventListener("click", () => {
+    if (!selectedWbId) return;
+
+    runBtn.disabled = true;
+    document.getElementById("status").textContent = "⏳ Запуск парсера...";
+
+    fetch("/api/run_parser/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
+      },
+      body: JSON.stringify({ wb_id: selectedWbId })
+    })
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById("status").textContent = "✅ " + data.message;
+      })
+      .catch(err => {
+        document.getElementById("status").textContent = "❌ Ошибка запуска";
+        console.error("Ошибка запуска парсера:", err);
+      })
+      .finally(() => {
+        runBtn.disabled = false;
+      });
+  });
+</script>
+{% endblock %}

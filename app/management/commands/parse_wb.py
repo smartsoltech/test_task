@@ -1,9 +1,8 @@
 import os
 import requests
 import logging
-from django.core.management.base import BaseCommand
-from database.models import Product
-
+from django.core.management.base import BaseCommand, CommandError
+from database.models import Category, Product, ProductHistory
 
 logging.basicConfig(
     filename='parse.log',
@@ -11,52 +10,56 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-
 class Command(BaseCommand):
-    help = "Парсит товары с Wildberries по ключевому слову"
+    help = "Парсит товары Wildberries по выбранной категории (wb_id из базы Category)"
 
     def add_arguments(self, parser):
-        parser.add_argument("query", type=str, help="Поисковый запрос")
+        parser.add_argument("wb_id", type=int, help="WB ID категории из базы данных")
 
     def handle(self, *args, **options):
-        query = options["query"]
+        wb_id = options["wb_id"]
+        try:
+            category = Category.objects.get(wb_id=wb_id)
+        except Category.DoesNotExist:
+            raise CommandError(f"Категория с wb_id={wb_id} не найдена в базе")
+
         max_pages = int(os.getenv("PARSER_MAX_PAGES", 5))
-        app_type = os.getenv("PARSER_APP_TYPE", "1")
-        dest = os.getenv("PARSER_DEST", "-1257786")
-        spp = os.getenv("PARSER_SPP", "30")
         user_agent = os.getenv("PARSER_USER_AGENT", "Mozilla/5.0")
+        resultset = os.getenv("PARSER_RESULTSET", "catalog")
+        dest = os.getenv("PARSER_DEST", "-1257786")
+        app_type = os.getenv("PARSER_APP_TYPE", "1")
+        spp = os.getenv("PARSER_SPP", "30")
 
         headers = {"User-Agent": user_agent}
-        logging.info(f"Запуск парсера для запроса: {query}")
+        logging.info(f"🔍 Парсинг категории: {category.name} (wb_id={wb_id})")
 
         added_count = 0
 
+
+        if not category.query:
+            self.stderr.write(f"❌ У категории '{category.name}' (wb_id={wb_id}) отсутствует поле query.")
+            return
+
         for page in range(1, max_pages + 1):
             url = (
-                "https://search.wb.ru/exactmatch/ru/common/v5/search"
-                f"?query={query}&resultset=catalog&page={page}"
-                f"&appType={app_type}&dest={dest}&spp={spp}"
+                f"https://search.wb.ru/exactmatch/ru/common/v5/search"
+                f"?appType={app_type}&dest={dest}&spp={spp}"
+                f"&query={category.query}&page={page}&resultset={resultset}"
             )
 
-            logging.info(f"Загрузка страницы {page}: {url}")
+            logging.info(f"📄 Загружается страница {page}: {url}")
 
             try:
                 response = requests.get(url, headers=headers, timeout=10)
                 response.raise_for_status()
-            except requests.RequestException as e:
-                logging.warning(f"Ошибка запроса (страница {page}): {e}")
-                self.stderr.write(f"[page {page}] ошибка запроса: {e}")
-                continue
-
-            try:
-                products = response.json().get("data", {}).get("products", [])
+                data = response.json()
             except Exception as e:
-                logging.error(f"Ошибка разбора JSON (страница {page}): {e}")
-                self.stderr.write(f"[page {page}] ошибка JSON: {e}")
+                logging.warning(f"⚠️ Ошибка при запросе страницы {page}: {e}")
                 continue
 
+            products = data.get("data", {}).get("products", [])
             if not products:
-                logging.info(f"На странице {page} нет товаров")
+                logging.info(f"⛔ На странице {page} нет товаров")
                 continue
 
             for item in products:
@@ -69,16 +72,30 @@ class Command(BaseCommand):
                     "discounted_price": price_info.get("product", 0) // 100,
                     "rating": item.get("rating", 0),
                     "review_count": item.get("feedbacks", 0),
+                
                 }
 
                 obj, created = Product.objects.update_or_create(
                     name=product_data["name"],
-                    defaults=product_data
+                    defaults={
+                        **product_data,
+                        "category": category
+                    }
+                )
+
+                ProductHistory.objects.create(
+                    product=obj,
+                    price=product_data["price"],
+                    discounted_price=product_data["discounted_price"],
+                    rating=product_data["rating"],
+                    review_count=product_data["review_count"]
                 )
 
                 if created:
                     added_count += 1
-                    logging.debug(f"Добавлен товар: {product_data['name']}")
+                    logging.debug(f"🆕 Новый товар: {product_data['name']}")
 
-        logging.info(f"Парсинг завершён. Добавлено товаров: {added_count}")
-        self.stdout.write(f"Завершено. Добавлено товаров: {added_count}")
+        logging.info(f"✅ Парсинг завершён. Добавлено новых товаров: {added_count}")
+        self.stdout.write(self.style.SUCCESS(
+            f"Парсинг завершён. Добавлено новых товаров: {added_count}"
+        ))
