@@ -1,16 +1,20 @@
-from django.shortcuts import render
-from database.models import Product
+from django.shortcuts import render, get_object_or_404
+from database.models import Product, Category
 
 from django.http import JsonResponse
 from django.template.loader import render_to_string
 from django.views.decorators.csrf import csrf_exempt
 from django.core.management import call_command
 
+from django.db.models import QuerySet
+
+from django.db.models import Min, Max
+from django.http import JsonResponse
+
+
 def index(request):
-    products = Product.objects.all().order_by('-rating')
-    return render(request, 'frontend/index.html', {
-        'products': products
-    })
+    top_categories = Category.objects.filter(parent__isnull=True).order_by("name")
+    return render(request, "frontend/index.html", {"top_categories": top_categories})
 
 
 def filter_ajax(request):
@@ -30,20 +34,29 @@ def filter_ajax(request):
     if min_reviews:
         qs = qs.filter(review_count__gte=min_reviews)
 
-    # HTML таблица
     html = render_to_string("frontend/products_table.html", {"products": qs})
 
-    #  Гистограмма по диапазонам цен
-    price_buckets = [0, 5000, 10000, 20000, 50000, 100000]
+    # Динамическая гистограмма по цене
+    agg = qs.aggregate(min_price=Min("discounted_price"), max_price=Max("discounted_price"))
+    min_val = agg["min_price"] or 0
+    max_val = agg["max_price"] or 0
+
     histogram = []
-    for i in range(len(price_buckets) - 1):
-        lower = price_buckets[i]
-        upper = price_buckets[i + 1]
-        count = qs.filter(discounted_price__gte=lower, discounted_price__lt=upper).count()
-        histogram.append({
-            "range": f"{lower}-{upper}",
-            "count": count
-        })
+    if max_val > min_val:
+        margin = int((max_val - min_val) * 0.1)
+        start = max(min_val - margin, 0)
+        end = max_val + margin
+        steps = 6
+        step_size = max((end - start) // steps, 1)
+
+        for i in range(steps):
+            lower = start + i * step_size
+            upper = lower + step_size
+            count = qs.filter(discounted_price__gte=lower, discounted_price__lt=upper).count()
+            histogram.append({
+                "range": f"{lower}-{upper}",
+                "count": count
+            })
 
     linechart = []
     for p in qs:
@@ -70,3 +83,30 @@ def run_parser(request):
             call_command("parse_wb", query)
             return JsonResponse({"status": "ok"})
     return JsonResponse({"status": "error"}, status=400)
+
+
+def product_detail(request, pk):
+    product = get_object_or_404(Product, pk=pk)
+    history = product.history.order_by("date")
+
+    history_serialized = [
+        {
+            "date": entry.date.strftime("%Y-%m-%d"),
+            "price": entry.price,
+            "discounted_price": entry.discounted_price,
+            "discount": entry.price - entry.discounted_price
+        }
+        for entry in history
+    ]
+
+    return render(request, "frontend/product_detail.html", {
+        "product": product,
+        "history": history,
+        "history_serialized": history_serialized
+    })
+    
+    
+def load_data_view(request):
+    from database.models import Category
+    top_categories = Category.objects.filter(parent__isnull=True).order_by("name")
+    return render(request, "frontend/load_data.html", {"top_categories": top_categories})

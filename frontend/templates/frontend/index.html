@@ -1,228 +1,194 @@
 {% extends "frontend/base.html" %}
-
-{% block title %}Главная | WB Аналитика{% endblock %}
+{% block title %}📊 Wildberries Аналитика{% endblock %}
 
 {% block content %}
-<form id="parserForm" class="row g-3 mb-4 align-items-end">
-  <div class="col-md-6">
-    <label for="searchQuery" class="form-label">Поисковый запрос</label>
-    <input type="text" id="searchQuery" name="query" class="form-control" placeholder="Например: смартфон">
-  </div>
-  <div class="col-md-3">
-    <button type="submit" class="btn btn-outline-success w-100">Получить новые товары</button>
-  </div>
-</form>
+<div class="d-flex">
+  <!-- Sidebar -->
+  <div id="filters-sidebar" class="p-3 border-end" style="min-width: 280px;">
+    <h5>📂 Фильтры</h5>
 
-<form id="filterForm" class="row g-3 mb-4">
+    <!-- Категории -->
+    <div class="mb-3">
+      <label class="form-label">Категория</label>
+      <select class="form-select category-select" data-level="0">
+        <option value="">-- Выберите --</option>
+        {% for cat in top_categories %}
+          <option value="{{ cat.wb_id }}">{{ cat.name }}</option>
+        {% endfor %}
+      </select>
+      <div id="subcategory-container"></div>
+    </div>
 
-  <!-- Фильтр по цене -->
-  <div class="col-12">
-    <label class="form-label">Цена (₽)</label>
-    <div class="d-flex align-items-center gap-3">
-      <input type="range" class="form-range" min="0" max="100000" step="1000" id="minPrice" name="min_price" value="0">
-      <span id="minPriceValue">0</span> —
-      <input type="range" class="form-range" min="0" max="100000" step="1000" id="maxPrice" name="max_price" value="100000">
-      <span id="maxPriceValue">100000</span>
+    <!-- Цена -->
+    <div class="mb-3">
+      <label class="form-label">Цена со скидкой</label>
+      <div class="input-group">
+        <input type="range" class="form-range" id="price-min" min="0" max="10000" step="1">
+        <input type="range" class="form-range" id="price-max" min="0" max="10000" step="1">
+      </div>
+      <div class="d-flex justify-content-between small text-muted">
+        <span id="price-min-label">0₽</span>
+        <span id="price-max-label">10000₽</span>
+      </div>
+    </div>
+
+    <!-- Отзывы -->
+    <div class="mb-3">
+      <label class="form-label">Минимум отзывов</label>
+      <input type="range" class="form-range" id="review-min" min="0" max="1000" step="1">
+      <div class="d-flex justify-content-between small text-muted">
+        <span>0</span><span id="review-count-label">1000</span>
+      </div>
+    </div>
+
+    <!-- Рейтинг -->
+    <div class="mb-3">
+      <label class="form-label">Минимальный рейтинг</label>
+      <div class="star-filter">
+        {% for i in "12345" %}
+          <span data-value="{{ i }}" class="fs-4 text-secondary" style="cursor: pointer;">★</span>
+        {% endfor %}
+      </div>
     </div>
   </div>
 
-  <!-- Фильтр по рейтингу -->
-  <div class="col-12">
-    <label class="form-label">Минимальный рейтинг</label>
-    <div class="d-flex align-items-center gap-3">
-      <input type="range" class="form-range" min="0" max="5" step="0.1" id="minRating" name="min_rating" value="0">
-      <span id="minRatingValue">0</span>
+  <!-- Content -->
+  <div class="flex-fill p-3" id="products-area">
+    <div id="loading-message" class="text-muted">Загрузите данные, выбрав категорию</div>
+    <div id="products-container"></div>
+    <div class="mt-4">
+      <canvas id="histogramChart"></canvas>
+      <canvas id="scatterChart" class="mt-4"></canvas>
     </div>
   </div>
-
-  <!-- Фильтр по количеству отзывов -->
-  <div class="col-12">
-    <label class="form-label">Минимум отзывов</label>
-    <div class="d-flex align-items-center gap-3">
-      <input type="range" class="form-range" min="0" max="1000" step="10" id="minReviews" name="min_reviews" value="0">
-      <span id="minReviewsValue">0</span>
-    </div>
-  </div>
-
-  <!-- Кнопка -->
-  <div class="col-12 d-flex justify-content-end">
-    <button type="submit" class="btn btn-primary">Применить</button>
-  </div>
-
-</form>
-
-<!-- Таблица -->
-<div id="productsTable">
-  {% include "frontend/products_table.html" %}
-</div>
-
-<!-- Графики -->
-<div class="mt-5">
-  <h4>Графики</h4>
-  <canvas id="histogram" height="100"></canvas>
-  <canvas id="linechart" height="100" class="mt-4"></canvas>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  function bindRange(id, outputId) {
-    const input = document.getElementById(id);
-    const output = document.getElementById(outputId);
-    input.addEventListener('input', () => {
-      output.innerText = input.value;
-    });
-    output.innerText = input.value; // инициализация
+  const subcategoryContainer = document.getElementById("subcategory-container");
+  const stars = document.querySelectorAll(".star-filter span");
+  let currentRating = 0;
+  let selectedCategory = null;
+
+  function loadSubcategories(wb_id, container) {
+    fetch(`/api/subcategories/?parent_id=${wb_id}`)
+      .then(res => res.json())
+      .then(data => {
+        const level = parseInt(container.dataset.level || 1);
+        const nextSelects = container.querySelectorAll(`select[data-level]`);
+        nextSelects.forEach(select => {
+          if (parseInt(select.dataset.level) >= level) select.remove();
+        });
+        if (data.length > 0) {
+          const select = document.createElement("select");
+          select.className = "form-select mt-2 category-select";
+          select.dataset.level = level;
+          select.innerHTML = '<option value="">-- Подкатегория --</option>';
+          data.forEach(cat => {
+            select.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+          });
+          select.addEventListener("change", () => {
+            selectedCategory = select.value;
+            container.dataset.level = level + 1;
+            loadSubcategories(select.value, container);
+            fetchProducts();
+          });
+          container.appendChild(select);
+        } else {
+          selectedCategory = wb_id;
+          fetchProducts();
+        }
+      });
   }
 
-  bindRange('minPrice', 'minPriceValue');
-  bindRange('maxPrice', 'maxPriceValue');
-  bindRange('minRating', 'minRatingValue');
-  bindRange('minReviews', 'minReviewsValue');
-
-  $('#filterForm').on('submit', function(e) {
-    e.preventDefault();
-    $.ajax({
-      url: '/filter/',
-      data: $(this).serialize(),
-      success: function(data) {
-        $('#productsTable').html(data.html);
-        // TODO: update charts if needed
-      }
-    });
+  document.querySelector(".category-select").addEventListener("change", function () {
+    subcategoryContainer.innerHTML = "";
+    subcategoryContainer.dataset.level = 1;
+    loadSubcategories(this.value, subcategoryContainer);
   });
-</script>
 
-<script>
-  let histogramChart = null;
-  let lineChart = null;
-
-  function bindRange(id, outputId) {
-    const input = document.getElementById(id);
-    const output = document.getElementById(outputId);
-    input.addEventListener('input', () => {
-      output.innerText = input.value;
-    });
-    output.innerText = input.value;
-  }
-
-  bindRange('minPrice', 'minPriceValue');
-  bindRange('maxPrice', 'maxPriceValue');
-  bindRange('minRating', 'minRatingValue');
-  bindRange('minReviews', 'minReviewsValue');
-
-  $('#filterForm').on('submit', function(e) {
-    e.preventDefault();
-    $.ajax({
-      url: '/filter/',
-      data: $(this).serialize(),
-      success: function(data) {
-        $('#productsTable').html(data.html);
-        updateCharts(data.chart_data);
+  stars.forEach(star => {
+    star.addEventListener("click", function () {
+      currentRating = parseInt(this.dataset.value);
+      stars.forEach(s => s.classList.remove("text-warning"));
+      for (let i = 0; i < currentRating; i++) {
+        stars[i].classList.add("text-warning");
       }
+      fetchProducts();
     });
   });
 
-  function updateCharts(data) {
-    // Гистограмма цен
-    const priceLabels = data.histogram.map(d => d.range);
-    const priceCounts = data.histogram.map(d => d.count);
+  document.getElementById("price-min").addEventListener("input", function () {
+    document.getElementById("price-min-label").innerText = this.value + "₽";
+    fetchProducts();
+  });
+  document.getElementById("price-max").addEventListener("input", function () {
+    document.getElementById("price-max-label").innerText = this.value + "₽";
+    fetchProducts();
+  });
+  document.getElementById("review-min").addEventListener("input", function () {
+    document.getElementById("review-count-label").innerText = this.value;
+    fetchProducts();
+  });
 
-    const histConfig = {
+  function fetchProducts() {
+    const minPrice = document.getElementById("price-min").value;
+    const maxPrice = document.getElementById("price-max").value;
+    const minReviews = document.getElementById("review-min").value;
+    const rating = currentRating;
+
+    const params = new URLSearchParams();
+    if (selectedCategory) params.append("category", selectedCategory);
+    if (minPrice) params.append("min_price", minPrice);
+    if (maxPrice) params.append("max_price", maxPrice);
+    if (minReviews) params.append("min_reviews", minReviews);
+    if (rating) params.append("min_rating", rating);
+
+    fetch(`/api/filter/?${params.toString()}`)
+      .then(res => res.json())
+      .then(data => {
+        renderProducts(data.html);
+        renderCharts(data.chart_data);
+      });
+  }
+
+  function renderProducts(html) {
+    document.getElementById("products-container").innerHTML = html;
+    document.getElementById("loading-message").style.display = "none";
+  }
+
+  function renderCharts(data) {
+    const histogramCtx = document.getElementById('histogramChart').getContext('2d');
+    const scatterCtx = document.getElementById('scatterChart').getContext('2d');
+
+    new Chart(histogramCtx, {
       type: 'bar',
       data: {
-        labels: priceLabels,
+        labels: data.histogram.map(x => x.range),
         datasets: [{
-          label: 'Кол-во товаров',
-          data: priceCounts,
-          backgroundColor: '#0d6efd'
+          label: 'Товары по цене',
+          data: data.histogram.map(x => x.count)
         }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { display: false },
-          title: { display: true, text: 'Распределение товаров по цене' }
-        }
       }
-    };
+    });
 
-    if (histogramChart) {
-      histogramChart.destroy();
-    }
-    histogramChart = new Chart(document.getElementById('histogram'), histConfig);
-
-    // Линейный график скидка-рейтинг
-    const ratings = data.linechart.map(d => d.rating);
-    const discounts = data.linechart.map(d => d.discount);
-
-    const lineConfig = {
-      type: 'line',
+    new Chart(scatterCtx, {
+      type: 'scatter',
       data: {
-        labels: ratings,
         datasets: [{
-          label: 'Скидка (₽)',
-          data: discounts,
-          borderColor: '#198754',
-          fill: false,
-          tension: 0.3
+          label: 'Скидка vs Рейтинг',
+          data: data.linechart.map(p => ({x: p.rating, y: p.discount}))
         }]
       },
       options: {
-        responsive: true,
-        plugins: {
-          legend: { display: false },
-          title: { display: true, text: 'Скидка в зависимости от рейтинга' }
-        },
         scales: {
-          x: { title: { display: true, text: 'Рейтинг' } },
-          y: { title: { display: true, text: 'Скидка (₽)' } }
+          x: {title: {display: true, text: 'Рейтинг'}},
+          y: {title: {display: true, text: 'Скидка'}}
         }
       }
-    };
-
-    if (lineChart) {
-      lineChart.destroy();
-    }
-    lineChart = new Chart(document.getElementById('linechart'), lineConfig);
+    });
   }
-</script>
-
-<script>
-  $('#parserForm').on('submit', function(e) {
-  e.preventDefault();
-  const query = $('#searchQuery').val().trim();
-  if (!query) return;
-
-  $.ajax({
-    url: '/run-parser/',
-    method: 'POST',
-    data: { query: query },
-    headers: { 'X-CSRFToken': getCookie('csrftoken') },
-    success: function(response) {
-      alert('Товары обновлены');
-      location.reload();
-    },
-    error: function() {
-      alert('Ошибка запуска парсера');
-    }
-  });
-});
-
-// csrf helper
-function getCookie(name) {
-  let cookieValue = null;
-  if (document.cookie && document.cookie !== '') {
-    const cookies = document.cookie.split(';');
-    for (const cookie of cookies) {
-      const trimmed = cookie.trim();
-      if (trimmed.startsWith(name + '=')) {
-        cookieValue = decodeURIComponent(trimmed.slice(name.length + 1));
-        break;
-      }
-    }
-  }
-  return cookieValue;
-}
 </script>
 {% endblock %}
