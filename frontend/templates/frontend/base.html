@@ -3,7 +3,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>{% block title %}WB Аналитика{% endblock %}</title>
+    <title>{% block title %}<a href="/">WB Аналитика</a>{% endblock %}</title>
 
     <!-- Локальный Bootstrap и кастомные стили -->
     <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
@@ -23,8 +23,18 @@
     {% block content %}{% endblock %}
 </main>
 
+
 <footer>
+    <div class="bg-light text-center py-3 mt-4">
+        <div class="container">
+            <p class="mb-0">Разработано для тестового задания Wildberries</p>
+        </div>
+    <div class="container-fluid">
     &copy; 2025 Wildberries Analytics | Построено с Django, Bootstrap 5.3 и Jinja
+    </div>
+    <div class="container-fluid">
+        <p class="mb-0">Все права защищены</p>
+    </div>
 </footer>
 
 <!-- Локальный jQuery и Bootstrap JS -->
