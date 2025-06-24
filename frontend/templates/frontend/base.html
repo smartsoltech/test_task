@@ -13,9 +13,30 @@
 </head>
 <body>
 
-<header class="bg-primary text-white p-3 mb-4 shadow-sm">
+<!-- Навигация -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container">
+    <a class="navbar-brand" href="/">📊 WB Аналитика</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">🏠 Главная</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/load_data">🔄 Запуск парсера</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- Шапка -->
+<header class="">
     <div class="container">
-        <h1 class="h3 mb-0">📊 Wildberries Аналитика</h1>
+
     </div>
 </header>
 
@@ -23,17 +44,18 @@
     {% block content %}{% endblock %}
 </main>
 
-
+<!-- Подвал -->
 <footer>
     <div class="bg-light text-center py-3 mt-4">
         <div class="container">
             <p class="mb-0">Разработано для тестового задания Wildberries</p>
         </div>
-    <div class="container-fluid">
-    &copy; 2025 Wildberries Analytics | Построено с Django, Bootstrap 5.3 и Jinja
-    </div>
-    <div class="container-fluid">
-        <p class="mb-0">Все права защищены</p>
+        <div class="container-fluid">
+            &copy; 2025 Wildberries Analytics | Построено с Django, Bootstrap 5.3 и Jinja
+        </div>
+        <div class="container-fluid">
+            <p class="mb-0">Все права защищены</p>
+        </div>
     </div>
 </footer>
 
